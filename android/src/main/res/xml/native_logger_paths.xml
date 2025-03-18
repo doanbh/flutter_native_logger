@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- For logs stored in external files directory -->
+    <external-files-path name="logs" path="native_logs/" />
+
+    <!-- For potential future use with different storage locations -->
+    <cache-path name="cache_logs" path="native_logs/" />
+    <files-path name="internal_logs" path="native_logs/" />
+</paths>

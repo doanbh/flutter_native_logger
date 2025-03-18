@@ -15,11 +15,11 @@ class LogViewer extends StatefulWidget {
   final bool showAutoScrollToggle;
 
   const LogViewer({
-    super.key,
+    Key? key,
     this.themeColor = Colors.blue,
     this.title = 'Native Logs',
     this.showAutoScrollToggle = true,
-  });
+  }) : super(key: key);
 
   @override
   State<LogViewer> createState() => _LogViewerState();
