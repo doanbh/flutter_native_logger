@@ -67,6 +67,84 @@ import native_logger
   - WorkManager Tasks (Android)
   - Background Fetch (iOS)
 
+#### Initialization
+
+```dart
+import 'package:native_logger/native_logger.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize the logger
+  final logger = NativeLogger();
+  await logger.initialize();
+  
+  runApp(MyApp());
+}
+```
+
+#### Logging Messages
+```dart
+// Simple logging
+await NativeLogger.log('User signed in');
+
+// With tag and level
+await NativeLogger.log(
+  'Payment processed',
+  tag: 'PAYMENT',
+  level: LogLevel.info,
+);
+
+// Error logging
+try {
+  // Some operation
+} catch (e, stackTrace) {
+  await NativeLogger.log(
+    'Error: $e\n$stackTrace',
+    level: LogLevel.error,
+    tag: 'API',
+  );
+}
+```
+
+#### Displaying Logs in Your App
+Add a log viewer to your app's debug menu or settings screen:
+```dart
+ElevatedButton(
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const LogViewer(
+          themeColor: Colors.blue,
+          title: 'Application Logs',
+        ),
+      ),
+    );
+  },
+  child: const Text('View Logs'),
+)
+```
+
+#### Background Logging
+Native Logger is designed to work seamlessly in background contexts:
+```dart
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Initialize logger for background context if needed
+  final logger = NativeLogger();
+  await logger.initialize();
+  
+  // Log the event
+  await BackgroundLogger.log(
+    'Received background message: ${message.messageId}',
+    tag: 'FCM',
+  );
+  
+  // Process the message...
+}
+```
+
 ### API Reference
 
 #### NativeLogger Class
