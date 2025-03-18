@@ -1,0 +1,26 @@
+name: native_logger
+description: High-performance native logging solution for Flutter that works in background isolates and FCM handlers
+version: 0.1.0
+homepage: https://github.com/yourname/native_logger
+
+environment:
+  sdk: '>=2.12.0 <4.0.0'
+  flutter: ">=2.5.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.sharitek.native_logger
+        pluginClass: NativeLoggerPlugin
+      ios:
+        pluginClass: NativeLoggerPlugin
