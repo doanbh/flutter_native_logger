@@ -32,11 +32,11 @@ dependencies:
 - Initialize Plugin in AppDelegate:
 - For early initialization or iOS-specific configuration, update your AppDelegate.swift:
 
+```swift
 import UIKit
 import Flutter
 import native_logger
 
-```swift
 @UIApplicationMain
 @objc class AppDelegate: FlutterAppDelegate {
   override func application(
