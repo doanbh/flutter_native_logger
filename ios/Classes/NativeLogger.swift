@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Flutter
 
 @objc public class NativeLogger: NSObject {
     private static let LOG_DIRECTORY = "native_logs"
@@ -386,7 +387,8 @@ import UIKit
         DispatchQueue.global(qos: .background).async {
             autoreleasepool {
                 do {
-                    let logDirectory = getLogFilePath().deletingLastPathComponent().path
+                    let logFilePath = getLogFilePath()
+                    let logDirectory = URL(fileURLWithPath: logFilePath).deletingLastPathComponent().path
                     guard let contents = try? FileManager.default.contentsOfDirectory(atPath: logDirectory) else {
                         return
                     }
