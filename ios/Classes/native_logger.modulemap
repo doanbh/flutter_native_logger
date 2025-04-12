@@ -1,0 +1,11 @@
+framework module native_logger {
+  umbrella header "NativeLoggerPlugin.h"
+  
+  export *
+  module * { export * }
+  
+  explicit module Swift {
+    header "native_logger-Swift.h"
+    requires objc
+  }
+} 

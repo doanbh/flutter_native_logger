@@ -11,9 +11,13 @@ Pod::Spec.new do |s|
     s.dependency 'Flutter'
     s.platform = :ios, '14.0'
     s.swift_version = '5.0'
-    s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'IPHONEOS_DEPLOYMENT_TARGET' => '14.0' }
+    s.pod_target_xcconfig = { 
+      'DEFINES_MODULE' => 'YES', 
+      'IPHONEOS_DEPLOYMENT_TARGET' => '14.0',
+      'SWIFT_OBJC_INTERFACE_HEADER_NAME' => 'native_logger-Swift.h',
+      'MODULEMAP_FILE' => '${PODS_TARGET_SRCROOT}/Classes/native_logger.modulemap'
+    }
     s.user_target_xcconfig = { 'IPHONEOS_DEPLOYMENT_TARGET' => '14.0' }
     s.public_header_files = 'Classes/**/*.h'
-    s.swift_objc_bridging_header = 'Classes/NativeLoggerPlugin-Bridging-Header.h'
-    s.preserve_paths = 'Classes/**/*.swift'
+    s.preserve_paths = ['Classes/**/*.swift', 'Classes/native_logger.modulemap']
   end
