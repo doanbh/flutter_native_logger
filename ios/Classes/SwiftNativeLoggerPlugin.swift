@@ -3,12 +3,19 @@ import UIKit
 
 public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     public static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(name: "com.sharitek.soffice/native_logger", binaryMessenger: registrar.messenger())
-        let eventChannel = FlutterEventChannel(name: "com.sharitek.soffice/log_events", binaryMessenger: registrar.messenger())
+        let channel = FlutterMethodChannel(name: "com.sharitek.native_logger/methods", binaryMessenger: registrar.messenger())
+        let eventChannel = FlutterEventChannel(name: "com.sharitek.native_logger/events", binaryMessenger: registrar.messenger())
         
         let instance = SwiftNativeLoggerPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
         eventChannel.setStreamHandler(instance)
+    }
+    
+    public static func prepareLogger() {
+        // Initialize the logger for usage in other native code
+        NativeLogger.log(message: "=== Native Logger prepared for use outside Flutter ===")
+        // Register for application lifecycle events
+        NativeLogger.registerApplicationLifecycleEvents()
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
