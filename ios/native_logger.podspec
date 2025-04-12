@@ -14,4 +14,6 @@ Pod::Spec.new do |s|
     s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'IPHONEOS_DEPLOYMENT_TARGET' => '14.0' }
     s.user_target_xcconfig = { 'IPHONEOS_DEPLOYMENT_TARGET' => '14.0' }
     s.public_header_files = 'Classes/**/*.h'
+    s.swift_objc_bridging_header = 'Classes/NativeLoggerPlugin-Bridging-Header.h'
+    s.preserve_paths = 'Classes/**/*.swift'
   end

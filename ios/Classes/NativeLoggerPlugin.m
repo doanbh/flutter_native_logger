@@ -11,6 +11,11 @@
 }
 
 + (void)prepareLogger {
-  [SwiftNativeLoggerPlugin prepareLogger];
+  // Check if SwiftNativeLoggerPlugin responds to prepareLogger
+  if ([SwiftNativeLoggerPlugin respondsToSelector:@selector(prepareLogger)]) {
+    [SwiftNativeLoggerPlugin prepareLogger];
+  } else {
+    NSLog(@"Warning: SwiftNativeLoggerPlugin does not respond to prepareLogger");
+  }
 }
 @end 

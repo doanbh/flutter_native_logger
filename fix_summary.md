@@ -3,6 +3,7 @@
 ## Error Identified
 1. Swift Compiler Error (Xcode): Type 'SwiftNativeLoggerPlugin' has no member 'prepareLogger'
 2. CI/CD Error: Unknown receiver 'NativeLoggerPlugin'; did you mean 'SwiftNativeLoggerPlugin'?
+3. ARC Semantic Issue (Xcode): No known class method for selector 'prepareLogger'
 
 ## Solution Implemented
 1. Added the missing `prepareLogger()` method to the `SwiftNativeLoggerPlugin` class in `ios/Classes/SwiftNativeLoggerPlugin.swift`.
@@ -15,8 +16,16 @@
    - Created `ios/Classes/NativeLoggerPlugin.h` - The Objective-C header file
    - Created `ios/Classes/NativeLoggerPlugin.m` - The Objective-C implementation file that forwards calls to Swift
    
-4. Updated the podspec to include public header files:
+4. Updated the podspec to include public header files and bridging support:
    - Added `s.public_header_files = 'Classes/**/*.h'` to `ios/native_logger.podspec`
+   - Added `s.swift_objc_bridging_header = 'Classes/NativeLoggerPlugin-Bridging-Header.h'`
+   - Added `s.preserve_paths = 'Classes/**/*.swift'`
+
+5. Added proper Objective-C exposure for Swift methods:
+   - Added `@objc(SwiftNativeLoggerPlugin)` to the Swift class declaration
+   - Added `@objc` attribute to the `prepareLogger` and `register` methods
+   - Created a bridging header file `NativeLoggerPlugin-Bridging-Header.h`
+   - Updated Objective-C implementation to safely call Swift methods
 
 ## Implementation Details
 1. The Swift `prepareLogger()` method was implemented to:
@@ -25,9 +34,9 @@
 
 2. The Objective-C bridge was implemented to:
    - Forward the `registerWithRegistrar:` call to Swift code
-   - Forward the `prepareLogger` call to Swift code
+   - Forward the `prepareLogger` call to Swift code safely with runtime checks
    
-3. These changes allow the plugin to be properly registered in both Swift and Objective-C contexts, which fixes the CI/CD error.
+3. These changes ensure proper Swift and Objective-C interoperability, fixing all the reported errors.
 
 ## Test Instructions
 1. Run `flutter pub get` to update dependencies
