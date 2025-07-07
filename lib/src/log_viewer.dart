@@ -127,6 +127,42 @@ class _LogViewerState extends State<LogViewer> {
             tooltip: 'Copy logs',
           ),
           IconButton(
+            icon: const Icon(Icons.analytics_outlined),
+            onPressed: () {
+              final stats = NativeLogger.getPerformanceStats();
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Logger Performance'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total Logs: ${stats['totalLogs']}'),
+                      Text('Timeouts: ${stats['timeouts']}'),
+                      Text('Errors: ${stats['errors']}'),
+                      Text('Success Rate: ${stats['successRate']}%'),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        NativeLogger.resetPerformanceStats();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Reset Stats'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            },
+            tooltip: 'Performance stats',
+          ),
+          IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () async {
               final result = await showDialog<bool>(

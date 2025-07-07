@@ -20,37 +20,52 @@ import Flutter
     // MARK: - Public API
     
     @objc public static func log(message: String, level: String = "INFO", tag: String = "iOS", isBackground: Bool = false) {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        let timestamp = dateFormatter.string(from: Date())
-        
-        let prefix = isBackground ? "[$tag-BG]" : "[$tag]"
-        let formattedMessage = "[\(timestamp)]\(prefix)[\(level)] \(message)\n"
-        
-        // Add to memory buffer
-        bufferLock.lock()
-        memoryBuffer.append(formattedMessage)
-        
-        // Check buffer size or time for flushing
-        let currentTime = Date()
-        let timeSinceLastFlush = currentTime.timeIntervalSince(lastFlushTime)
-        let bufferSize = memoryBuffer.length
-        
-        // Flush if buffer is big enough or enough time has passed
-        if bufferSize >= MAX_BUFFER_SIZE || timeSinceLastFlush >= 5.0 {
-            flushBuffer()
-        }
-        bufferLock.unlock()
-        
-        // Send to event sink if available
-        DispatchQueue.main.async {
-            if let sink = eventSink {
-                sink(message)
+        // Ensure this method never blocks by running everything in background
+        DispatchQueue.global(qos: .background).async {
+            autoreleasepool {
+                do {
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+                    let timestamp = dateFormatter.string(from: Date())
+
+                    let prefix = isBackground ? "[$tag-BG]" : "[$tag]"
+                    let formattedMessage = "[\(timestamp)]\(prefix)[\(level)] \(message)\n"
+
+                    // Add to memory buffer (thread-safe)
+                    bufferLock.lock()
+                    memoryBuffer.append(formattedMessage)
+
+                    // Check buffer size or time for flushing
+                    let currentTime = Date()
+                    let timeSinceLastFlush = currentTime.timeIntervalSince(lastFlushTime)
+                    let bufferSize = memoryBuffer.length
+
+                    // Flush if buffer is big enough or enough time has passed
+                    if bufferSize >= MAX_BUFFER_SIZE || timeSinceLastFlush >= 5.0 {
+                        flushBuffer()
+                    }
+                    bufferLock.unlock()
+
+                    // Send to event sink if available (on main thread)
+                    DispatchQueue.main.async {
+                        if let sink = eventSink {
+                            do {
+                                sink(message)
+                            } catch {
+                                // Ignore event sink errors to prevent crashes
+                                NSLog("Event sink error: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+
+                    // Also print to console for debugging
+                    NSLog("NativeLogger: \(formattedMessage)")
+                } catch {
+                    // Never crash the app due to logging errors
+                    NSLog("Error in NativeLogger.log: \(error.localizedDescription)")
+                }
             }
         }
-        
-        // Also print to console for debugging
-        NSLog("NativeLogger: \(formattedMessage)")
     }
     
     @objc public static func readLogs() -> String {
@@ -126,20 +141,23 @@ import Flutter
     }
     
     @objc public static func getLogFilePath() -> String {
-        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-        let documentsDirectory = paths[0]
-        let directory = documentsDirectory.appendingPathComponent(LOG_DIRECTORY)
-        
-        // Create directory if needed
         do {
+            let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            let documentsDirectory = paths[0]
+            let directory = documentsDirectory.appendingPathComponent(LOG_DIRECTORY)
+
+            // Create directory if needed (safe operation)
             if !FileManager.default.fileExists(atPath: directory.path) {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             }
+
+            return directory.appendingPathComponent(LOG_FILENAME).path
         } catch {
             NSLog("Error creating log directory: \(error.localizedDescription)")
+            // Return a fallback path in case of error
+            let fallbackPath = NSTemporaryDirectory() + LOG_FILENAME
+            return fallbackPath
         }
-        
-        return directory.appendingPathComponent(LOG_FILENAME).path
     }
     
     // MARK: - Private Methods
@@ -149,46 +167,51 @@ import Flutter
     }
     
     private static func flushBuffer(force: Bool = false) {
+        // Extract buffer content safely
+        var contentToWrite: NSString?
+
         bufferLock.lock()
-        defer { bufferLock.unlock() }
-        
         if memoryBuffer.length == 0 && !force {
+            bufferLock.unlock()
             return
         }
-        
-        let contentToWrite = memoryBuffer.copy() as! NSString
+
+        contentToWrite = memoryBuffer.copy() as? NSString
         memoryBuffer.setString("")
         lastFlushTime = Date()
-        
+        bufferLock.unlock()
+
+        // Ensure we have content to write
+        guard let content = contentToWrite, content.length > 0 else {
+            return
+        }
+
+        // Always perform file operations in background
         DispatchQueue.global(qos: .background).async {
             autoreleasepool {
                 do {
                     let logFilePath = getLogFilePath()
                     let fileAttr = try? FileManager.default.attributesOfItem(atPath: logFilePath)
                     let fileSize = fileAttr?[.size] as? UInt64 ?? 0
-                    
+
                     if fileSize > MAX_LOG_SIZE {
                         // Rotate log files
                         rotateLogFiles()
                     }
-                    
-                    // Append to file
-                    let fileHandle = FileHandle(forWritingAtPath: logFilePath)
-                    
-                    if fileHandle != nil {
-                        // File exists, append to it
-                        fileHandle!.seekToEndOfFile()
-                        if let data = contentToWrite.data(using: String.Encoding.utf8.rawValue) {
-                            fileHandle!.write(data)
+
+                    // Use modern file writing approach
+                    if let data = content.data(using: String.Encoding.utf8.rawValue) {
+                        if FileManager.default.fileExists(atPath: logFilePath) {
+                            // Append to existing file
+                            if let fileHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logFilePath)) {
+                                defer { try? fileHandle.close() }
+                                fileHandle.seekToEndOfFile()
+                                fileHandle.write(data)
+                            }
+                        } else {
+                            // Create new file
+                            try data.write(to: URL(fileURLWithPath: logFilePath))
                         }
-                        fileHandle!.closeFile()
-                    } else {
-                        // File doesn't exist, create it
-                        try contentToWrite.write(
-                            toFile: logFilePath,
-                            atomically: true,
-                            encoding: String.Encoding.utf8.rawValue
-                        )
                     }
                 } catch {
                     NSLog("Error writing to log file: \(error.localizedDescription)")

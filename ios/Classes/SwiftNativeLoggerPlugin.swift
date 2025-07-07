@@ -13,37 +13,48 @@ public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHand
     }
     
     @objc public static func prepareLogger() {
-        // Initialize the logger for usage in other native code
-        NativeLogger.log(message: "=== Native Logger prepared for use outside Flutter ===")
-        // Register for application lifecycle events
-        NativeLogger.registerApplicationLifecycleEvents()
+        // Initialize the logger for usage in other native code (non-blocking)
+        DispatchQueue.global(qos: .background).async {
+            NativeLogger.log(message: "=== Native Logger prepared for use outside Flutter ===")
+            // Register for application lifecycle events
+            NativeLogger.registerApplicationLifecycleEvents()
+        }
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "initializeLogger":
-            // Log initialization
-            NativeLogger.log(message: "=== Native Logger initialized from Flutter ===")
+            // Respond immediately to avoid blocking Flutter
             result(true)
+            // Log initialization in background
+            DispatchQueue.global(qos: .background).async {
+                NativeLogger.log(message: "=== Native Logger initialized from Flutter ===")
+            }
             
         case "logMessage":
+            // Validate arguments first
             guard let args = call.arguments as? [String: Any],
                   let message = args["message"] as? String else {
                 result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing message", details: nil))
                 return
             }
-            
-            let level = args["level"] as? String ?? "INFO"
-            let tag = args["tag"] as? String ?? "Flutter"
-            let isBackground = args["isBackground"] as? Bool ?? false
-            
-            NativeLogger.log(
-                message: message,
-                level: level, 
-                tag: tag,
-                isBackground: isBackground
-            )
+
+            // Respond immediately to avoid blocking Flutter
             result(true)
+
+            // Process logging in background
+            DispatchQueue.global(qos: .background).async {
+                let level = args["level"] as? String ?? "INFO"
+                let tag = args["tag"] as? String ?? "Flutter"
+                let isBackground = args["isBackground"] as? Bool ?? false
+
+                NativeLogger.log(
+                    message: message,
+                    level: level,
+                    tag: tag,
+                    isBackground: isBackground
+                )
+            }
             
         case "readLogs":
             result(NativeLogger.readLogs())
