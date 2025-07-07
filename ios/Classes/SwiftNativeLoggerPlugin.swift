@@ -88,7 +88,10 @@ public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHand
                 } else {
                     result(nil)
                 }
-            
+
+            case "testShareFunctionality":
+                result(NativeLogger.testShareFunctionality())
+
         default:
             result(FlutterMethodNotImplemented)
         }
