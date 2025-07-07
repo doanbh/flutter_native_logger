@@ -168,6 +168,16 @@ class NativeLogger {
     }
   }
 
+  /// Test share functionality (iOS only)
+  static Future<String> testShareFunctionality() async {
+    try {
+      final String result = await _channel.invokeMethod('testShareFunctionality');
+      return result;
+    } catch (e) {
+      return 'Error testing share functionality: $e';
+    }
+  }
+
   /// Stream of real-time log events
   Stream<String> get logStream => _logStreamController.stream;
 

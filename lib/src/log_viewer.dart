@@ -113,8 +113,40 @@ class _LogViewerState extends State<LogViewer> {
           ),
           IconButton(
             icon: const Icon(Icons.share),
-            onPressed: () => NativeLogger.shareLogFile(),
+            onPressed: () async {
+              final success = await NativeLogger.shareLogFile();
+              if (!success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to share logs. Check if logs exist.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
             tooltip: 'Share logs',
+          ),
+          IconButton(
+            icon: const Icon(Icons.bug_report),
+            onPressed: () async {
+              final testResult = await NativeLogger.testShareFunctionality();
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Share Test Results'),
+                  content: SingleChildScrollView(
+                    child: Text(testResult),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            },
+            tooltip: 'Test share functionality',
           ),
           IconButton(
             icon: const Icon(Icons.content_copy),

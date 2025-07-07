@@ -107,36 +107,51 @@ import Flutter
     }
     
     @objc public static func shareLogFile() -> Bool {
+        // Force flush to ensure all logs are written
         flushBuffer(force: true)
-        
+
         let logFilePath = getLogFilePath()
-        
-        guard FileManager.default.fileExists(atPath: logFilePath),
-              let fileURL = URL(string: "file://\(logFilePath)") else {
+
+        // Check if file exists
+        guard FileManager.default.fileExists(atPath: logFilePath) else {
+            NSLog("NativeLogger: Log file does not exist at path: \(logFilePath)")
             return false
         }
-        
-        // Get the top view controller to present the share sheet
-        guard let topVC = UIApplication.shared.windows.first?.rootViewController?.topMostViewController() else {
+
+        // Create proper file URL
+        let fileURL = URL(fileURLWithPath: logFilePath)
+
+        // Get the top view controller using modern approach
+        guard let topVC = getTopViewController() else {
+            NSLog("NativeLogger: Could not find top view controller for sharing")
             return false
         }
-        
+
         DispatchQueue.main.async {
+            // Create activity view controller with proper error handling
             let activityVC = UIActivityViewController(
                 activityItems: [fileURL],
                 applicationActivities: nil
             )
-            
-            // On iPad, present as popover
+
+            // Configure for iPad
             if let popover = activityVC.popoverPresentationController {
                 popover.sourceView = topVC.view
-                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                popover.sourceRect = CGRect(
+                    x: topVC.view.bounds.midX,
+                    y: topVC.view.bounds.midY,
+                    width: 0,
+                    height: 0
+                )
                 popover.permittedArrowDirections = []
             }
-            
-            topVC.present(activityVC, animated: true)
+
+            // Present with completion handler
+            topVC.present(activityVC, animated: true) {
+                NSLog("NativeLogger: Share sheet presented successfully")
+            }
         }
-        
+
         return true
     }
     
@@ -149,13 +164,32 @@ import Flutter
             // Create directory if needed (safe operation)
             if !FileManager.default.fileExists(atPath: directory.path) {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                NSLog("NativeLogger: Created log directory at: \(directory.path)")
             }
 
-            return directory.appendingPathComponent(LOG_FILENAME).path
+            let logFilePath = directory.appendingPathComponent(LOG_FILENAME).path
+
+            // Ensure log file exists for sharing
+            if !FileManager.default.fileExists(atPath: logFilePath) {
+                let initialContent = "=== Native Logger initialized at \(Date()) ===\n"
+                try initialContent.write(toFile: logFilePath, atomically: true, encoding: .utf8)
+                NSLog("NativeLogger: Created initial log file at: \(logFilePath)")
+            }
+
+            return logFilePath
         } catch {
-            NSLog("Error creating log directory: \(error.localizedDescription)")
+            NSLog("NativeLogger: Error creating log directory: \(error.localizedDescription)")
             // Return a fallback path in case of error
             let fallbackPath = NSTemporaryDirectory() + LOG_FILENAME
+
+            // Try to create fallback file
+            do {
+                let initialContent = "=== Native Logger fallback file at \(Date()) ===\n"
+                try initialContent.write(toFile: fallbackPath, atomically: true, encoding: .utf8)
+            } catch {
+                NSLog("NativeLogger: Failed to create fallback file: \(error.localizedDescription)")
+            }
+
             return fallbackPath
         }
     }
@@ -164,6 +198,74 @@ import Flutter
     
     public static func setEventSink(_ sink: @escaping FlutterEventSink) {
         eventSink = sink
+    }
+
+    // MARK: - Modern View Controller Helper
+
+    private static func getTopViewController() -> UIViewController? {
+        // Modern approach for iOS 13+
+        if #available(iOS 13.0, *) {
+            // Try to get from active window scene
+            for scene in UIApplication.shared.connectedScenes {
+                if let windowScene = scene as? UIWindowScene,
+                   windowScene.activationState == .foregroundActive {
+                    for window in windowScene.windows {
+                        if window.isKeyWindow,
+                           let rootVC = window.rootViewController {
+                            return rootVC.topMostViewController()
+                        }
+                    }
+                }
+            }
+
+            // Fallback: get from any active window
+            for scene in UIApplication.shared.connectedScenes {
+                if let windowScene = scene as? UIWindowScene {
+                    for window in windowScene.windows {
+                        if let rootVC = window.rootViewController {
+                            return rootVC.topMostViewController()
+                        }
+                    }
+                }
+            }
+        }
+
+        // Legacy fallback for iOS 12 and below
+        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
+           let rootVC = window.rootViewController {
+            return rootVC.topMostViewController()
+        }
+
+        // Last resort fallback
+        if let window = UIApplication.shared.windows.first,
+           let rootVC = window.rootViewController {
+            return rootVC.topMostViewController()
+        }
+
+        return nil
+    }
+
+    // MARK: - Testing and Debug Helpers
+
+    @objc public static func testShareFunctionality() -> String {
+        let logFilePath = getLogFilePath()
+
+        var status = "Share Test Results:\n"
+        status += "Log file path: \(logFilePath)\n"
+        status += "File exists: \(FileManager.default.fileExists(atPath: logFilePath))\n"
+
+        if let fileSize = try? FileManager.default.attributesOfItem(atPath: logFilePath)[.size] as? UInt64 {
+            status += "File size: \(fileSize) bytes\n"
+        }
+
+        let topVC = getTopViewController()
+        status += "Top view controller found: \(topVC != nil)\n"
+
+        if let topVC = topVC {
+            status += "Top VC type: \(type(of: topVC))\n"
+        }
+
+        return status
     }
     
     private static func flushBuffer(force: Bool = false) {
