@@ -46,11 +46,11 @@ class NativeLoggerPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, EventC
         eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "com.sharitek.native_logger/events")
         eventChannel.setStreamHandler(this)
 
-        // Ensure log directory exists
-        createLogDirectoryIfNeeded()
-
-        // Add startup log
-        logToFile("=== Native Logger initialized ===")
+        // Initialize in background to avoid blocking main thread
+        executor.execute {
+            createLogDirectoryIfNeeded()
+            logToFile("=== Native Logger initialized ===")
+        }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -62,18 +62,27 @@ class NativeLoggerPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, EventC
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "initializeLogger" -> {
-                logToFile("=== Native Logger initialized from Flutter ===")
+                // Respond immediately to avoid blocking Flutter
                 result.success(true)
+                // Log in background
+                executor.execute {
+                    logToFile("=== Native Logger initialized from Flutter ===")
+                }
             }
             "logMessage" -> {
-                val message = call.argument<String>("message") ?: "No message"
-                val level = call.argument<String>("level") ?: "INFO"
-                val tag = call.argument<String>("tag") ?: "Flutter"
-                val isBackground = call.argument<Boolean>("isBackground") ?: false
-
-                val formattedMessage = if (isBackground) "[$tag-BG][$level] $message" else "[$tag][$level] $message"
-                logToFile(formattedMessage)
+                // Respond immediately to avoid blocking Flutter
                 result.success(true)
+
+                // Process logging in background
+                executor.execute {
+                    val message = call.argument<String>("message") ?: "No message"
+                    val level = call.argument<String>("level") ?: "INFO"
+                    val tag = call.argument<String>("tag") ?: "Flutter"
+                    val isBackground = call.argument<Boolean>("isBackground") ?: false
+
+                    val formattedMessage = if (isBackground) "[$tag-BG][$level] $message" else "[$tag][$level] $message"
+                    logToFile(formattedMessage)
+                }
             }
             "readLogs" -> {
                 flushBuffer(force = true) // Ensure all logs are saved before reading
@@ -119,31 +128,42 @@ class NativeLoggerPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, EventC
     }
 
     private fun logToFile(message: String) {
-        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
-        val logEntry = "[$timestamp] $message\n"
+        try {
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+            val logEntry = "[$timestamp] $message\n"
 
-        // Add to in-memory buffer
-        synchronized(logBufferLock) {
-            memoryLogBuffer.append(logEntry)
+            // Add to in-memory buffer (this is fast, no I/O)
+            synchronized(logBufferLock) {
+                memoryLogBuffer.append(logEntry)
 
-            // Auto-flush based on size or time
-            val currentTime = System.currentTimeMillis()
-            val bufferSize = memoryLogBuffer.length
-            val timeSinceLastFlush = currentTime - lastFlushTime
+                // Auto-flush based on size or time
+                val currentTime = System.currentTimeMillis()
+                val bufferSize = memoryLogBuffer.length
+                val timeSinceLastFlush = currentTime - lastFlushTime
 
-            // Write to file if buffer reaches threshold or time passed 5s
-            if (bufferSize >= LOG_BUFFER_FLUSH_SIZE || timeSinceLastFlush >= 5000) {
-                executor.execute {
-                    flushBuffer()
+                // Write to file if buffer reaches threshold or time passed 5s
+                if (bufferSize >= LOG_BUFFER_FLUSH_SIZE || timeSinceLastFlush >= 5000) {
+                    // Always flush in background to avoid blocking
+                    executor.execute {
+                        flushBuffer()
+                    }
                 }
             }
-        }
 
-        // Send log to Flutter if event sink available
-        eventSink?.let {
-            mainHandler.post {
-                it.success(message)
+            // Send log to Flutter if event sink available (non-blocking)
+            eventSink?.let { sink ->
+                mainHandler.post {
+                    try {
+                        sink.success(message)
+                    } catch (e: Exception) {
+                        // Ignore event sink errors to prevent crashes
+                        android.util.Log.w("NativeLogger", "Event sink error: ${e.message}")
+                    }
+                }
             }
+        } catch (e: Exception) {
+            // Never crash the app due to logging errors
+            android.util.Log.e("NativeLogger", "Error in logToFile: ${e.message}")
         }
     }
 
