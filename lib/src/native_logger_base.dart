@@ -19,8 +19,29 @@ class NativeLogger {
   // Stream controller for exposed stream
   final StreamController<String> _logStreamController = StreamController<String>.broadcast();
 
+  // Initialization state
+  bool _isInitialized = false;
+  bool _isInitializing = false;
+
+  // Performance monitoring
+  static int _logCount = 0;
+  static int _timeoutCount = 0;
+  static int _errorCount = 0;
+
   /// Initialize the logger with timeout and non-blocking approach
   Future<bool> initialize() async {
+    // Prevent multiple initialization attempts
+    if (_isInitialized) return true;
+    if (_isInitializing) {
+      // Wait for ongoing initialization
+      while (_isInitializing && !_isInitialized) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      return _isInitialized;
+    }
+
+    _isInitializing = true;
+
     try {
       // Add timeout to prevent indefinite blocking
       await _channel.invokeMethod('initializeLogger').timeout(
@@ -52,11 +73,15 @@ class NativeLogger {
         }
       });
 
+      _isInitialized = true;
       return true;
     } catch (e) {
       print('Failed to initialize native logger: $e');
       // Return true to allow app to continue even if logger fails
+      _isInitialized = true; // Mark as initialized to prevent retries
       return true;
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -68,6 +93,13 @@ class NativeLogger {
         bool isBackground = false
       }) async {
     try {
+      // Auto-initialize if not already done (lazy initialization)
+      final instance = NativeLogger();
+      if (!instance._isInitialized && !instance._isInitializing) {
+        // Fire and forget initialization - don't wait for it
+        instance.initialize();
+      }
+
       // Add timeout to prevent blocking
       await _channel.invokeMethod('logMessage', {
         'message': message,
@@ -79,13 +111,17 @@ class NativeLogger {
         const Duration(seconds: 1),
         onTimeout: () {
           // Silent timeout - don't block app execution
-          print('Log timeout for: $message');
+          _timeoutCount++;
+          print('Log timeout for: $message (Total timeouts: $_timeoutCount)');
           return null;
         },
       );
+
+      _logCount++;
     } catch (e) {
       // Silent failure - can't log errors from logger
-      print('Failed to log: $e');
+      _errorCount++;
+      print('Failed to log: $e (Total errors: $_errorCount)');
     }
   }
 
@@ -134,6 +170,23 @@ class NativeLogger {
 
   /// Stream of real-time log events
   Stream<String> get logStream => _logStreamController.stream;
+
+  /// Get performance statistics
+  static Map<String, int> getPerformanceStats() {
+    return {
+      'totalLogs': _logCount,
+      'timeouts': _timeoutCount,
+      'errors': _errorCount,
+      'successRate': _logCount > 0 ? ((_logCount - _errorCount - _timeoutCount) * 100 / _logCount).round() : 100,
+    };
+  }
+
+  /// Reset performance counters
+  static void resetPerformanceStats() {
+    _logCount = 0;
+    _timeoutCount = 0;
+    _errorCount = 0;
+  }
 
   /// Close the logger when no longer needed
   void dispose() {

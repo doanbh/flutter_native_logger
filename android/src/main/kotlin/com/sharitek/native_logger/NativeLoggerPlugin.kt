@@ -38,6 +38,9 @@ class NativeLoggerPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, EventC
     private val LOG_BUFFER_FLUSH_SIZE = 4 * 1024 // 4KB
     private var lastFlushTime = System.currentTimeMillis()
 
+    // Performance optimization flags
+    private var isFlushingInProgress = false
+
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.sharitek.native_logger/methods")
@@ -142,10 +145,15 @@ class NativeLoggerPlugin: FlutterPlugin, MethodChannel.MethodCallHandler, EventC
                 val timeSinceLastFlush = currentTime - lastFlushTime
 
                 // Write to file if buffer reaches threshold or time passed 5s
-                if (bufferSize >= LOG_BUFFER_FLUSH_SIZE || timeSinceLastFlush >= 5000) {
+                if ((bufferSize >= LOG_BUFFER_FLUSH_SIZE || timeSinceLastFlush >= 5000) && !isFlushingInProgress) {
+                    isFlushingInProgress = true
                     // Always flush in background to avoid blocking
                     executor.execute {
-                        flushBuffer()
+                        try {
+                            flushBuffer()
+                        } finally {
+                            isFlushingInProgress = false
+                        }
                     }
                 }
             }

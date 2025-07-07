@@ -167,64 +167,56 @@ import Flutter
     }
     
     private static func flushBuffer(force: Bool = false) {
-        // Ensure this is always called from background thread
-        let performFlush = {
-            bufferLock.lock()
-            defer { bufferLock.unlock() }
+        // Extract buffer content safely
+        var contentToWrite: NSString?
 
-            if memoryBuffer.length == 0 && !force {
-                return
-            }
-
-            let contentToWrite = memoryBuffer.copy() as! NSString
-            memoryBuffer.setString("")
-            lastFlushTime = Date()
-
-            // Perform file operations in background
-            DispatchQueue.global(qos: .background).async {
-                autoreleasepool {
-                    do {
-                        let logFilePath = getLogFilePath()
-                        let fileAttr = try? FileManager.default.attributesOfItem(atPath: logFilePath)
-                        let fileSize = fileAttr?[.size] as? UInt64 ?? 0
-
-                        if fileSize > MAX_LOG_SIZE {
-                            // Rotate log files
-                            rotateLogFiles()
-                        }
-
-                        // Append to file
-                        let fileHandle = FileHandle(forWritingAtPath: logFilePath)
-
-                        if fileHandle != nil {
-                            // File exists, append to it
-                            fileHandle!.seekToEndOfFile()
-                            if let data = contentToWrite.data(using: String.Encoding.utf8.rawValue) {
-                                fileHandle!.write(data)
-                            }
-                            fileHandle!.closeFile()
-                        } else {
-                            // File doesn't exist, create it
-                            try contentToWrite.write(
-                                toFile: logFilePath,
-                                atomically: true,
-                                encoding: String.Encoding.utf8.rawValue
-                            )
-                        }
-                    } catch {
-                        NSLog("Error writing to log file: \(error.localizedDescription)")
-                    }
-                }
-            }
+        bufferLock.lock()
+        if memoryBuffer.length == 0 && !force {
+            bufferLock.unlock()
+            return
         }
 
-        // Always run on background thread
-        if Thread.isMainThread {
-            DispatchQueue.global(qos: .background).async {
-                performFlush()
+        contentToWrite = memoryBuffer.copy() as? NSString
+        memoryBuffer.setString("")
+        lastFlushTime = Date()
+        bufferLock.unlock()
+
+        // Ensure we have content to write
+        guard let content = contentToWrite, content.length > 0 else {
+            return
+        }
+
+        // Always perform file operations in background
+        DispatchQueue.global(qos: .background).async {
+            autoreleasepool {
+                do {
+                    let logFilePath = getLogFilePath()
+                    let fileAttr = try? FileManager.default.attributesOfItem(atPath: logFilePath)
+                    let fileSize = fileAttr?[.size] as? UInt64 ?? 0
+
+                    if fileSize > MAX_LOG_SIZE {
+                        // Rotate log files
+                        rotateLogFiles()
+                    }
+
+                    // Use modern file writing approach
+                    if let data = content.data(using: String.Encoding.utf8.rawValue) {
+                        if FileManager.default.fileExists(atPath: logFilePath) {
+                            // Append to existing file
+                            if let fileHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logFilePath)) {
+                                defer { try? fileHandle.close() }
+                                fileHandle.seekToEndOfFile()
+                                fileHandle.write(data)
+                            }
+                        } else {
+                            // Create new file
+                            try data.write(to: URL(fileURLWithPath: logFilePath))
+                        }
+                    }
+                } catch {
+                    NSLog("Error writing to log file: \(error.localizedDescription)")
+                }
             }
-        } else {
-            performFlush()
         }
     }
     

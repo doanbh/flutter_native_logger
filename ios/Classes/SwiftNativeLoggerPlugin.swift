@@ -32,16 +32,18 @@ public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHand
             }
             
         case "logMessage":
+            // Validate arguments first
+            guard let args = call.arguments as? [String: Any],
+                  let message = args["message"] as? String else {
+                result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing message", details: nil))
+                return
+            }
+
             // Respond immediately to avoid blocking Flutter
             result(true)
 
             // Process logging in background
             DispatchQueue.global(qos: .background).async {
-                guard let args = call.arguments as? [String: Any],
-                      let message = args["message"] as? String else {
-                    return
-                }
-
                 let level = args["level"] as? String ?? "INFO"
                 let tag = args["tag"] as? String ?? "Flutter"
                 let isBackground = args["isBackground"] as? Bool ?? false
