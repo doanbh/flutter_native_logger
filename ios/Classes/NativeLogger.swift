@@ -155,7 +155,7 @@ import Flutter
         let fileURL = URL(fileURLWithPath: logFilePath)
 
         // Get the top view controller using modern approach
-        guard let topVC = getTopViewController() else {
+        guard let topVC = topMostViewController() else {
             NSLog("NativeLogger: Could not find top view controller for sharing")
             return false
         }
@@ -239,50 +239,7 @@ import Flutter
         return eventSink
     }
 
-    // MARK: - Modern View Controller Helper
-
-    private static func getTopViewController() -> UIViewController? {
-        // Modern approach for iOS 13+
-        if #available(iOS 13.0, *) {
-            // Try to get from active window scene
-            for scene in UIApplication.shared.connectedScenes {
-                if let windowScene = scene as? UIWindowScene,
-                   windowScene.activationState == .foregroundActive {
-                    for window in windowScene.windows {
-                        if window.isKeyWindow,
-                           let rootVC = window.rootViewController {
-                            return rootVC.topMostViewController()
-                        }
-                    }
-                }
-            }
-
-            // Fallback: get from any active window
-            for scene in UIApplication.shared.connectedScenes {
-                if let windowScene = scene as? UIWindowScene {
-                    for window in windowScene.windows {
-                        if let rootVC = window.rootViewController {
-                            return rootVC.topMostViewController()
-                        }
-                    }
-                }
-            }
-        }
-
-        // Legacy fallback for iOS 12 and below
-        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
-           let rootVC = window.rootViewController {
-            return rootVC.topMostViewController()
-        }
-
-        // Last resort fallback
-        if let window = UIApplication.shared.windows.first,
-           let rootVC = window.rootViewController {
-            return rootVC.topMostViewController()
-        }
-
-        return nil
-    }
+    // MARK: - Modern View Controller Helper (using new implementation)
 
     // MARK: - Testing and Debug Helpers
 
@@ -297,7 +254,7 @@ import Flutter
             status += "File size: \(fileSize) bytes\n"
         }
 
-        let topVC = getTopViewController()
+        let topVC = topMostViewController()
         status += "Top view controller found: \(topVC != nil)\n"
 
         if let topVC = topVC {
@@ -614,20 +571,30 @@ import Flutter
             }
         }
     }
-}
 
-// Helper extension to get topmost view controller
-extension UIViewController {
-    func topMostViewController() -> UIViewController {
-        if let presented = self.presentedViewController {
-            return presented.topMostViewController()
+    // MARK: - Helper Methods
+
+    /// Helper method to get topmost view controller
+    private static func topMostViewController() -> UIViewController? {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }),
+              let rootViewController = window.rootViewController else {
+            return nil
         }
-        if let navigation = self as? UINavigationController {
-            return navigation.visibleViewController?.topMostViewController() ?? navigation
+
+        return getTopMostViewController(from: rootViewController)
+    }
+
+    private static func getTopMostViewController(from viewController: UIViewController) -> UIViewController {
+        if let presented = viewController.presentedViewController {
+            return getTopMostViewController(from: presented)
         }
-        if let tab = self as? UITabBarController {
-            return tab.selectedViewController?.topMostViewController() ?? tab
+        if let navigation = viewController as? UINavigationController {
+            return getTopMostViewController(from: navigation.visibleViewController ?? navigation)
         }
-        return self
+        if let tab = viewController as? UITabBarController {
+            return getTopMostViewController(from: tab.selectedViewController ?? tab)
+        }
+        return viewController
     }
 }
