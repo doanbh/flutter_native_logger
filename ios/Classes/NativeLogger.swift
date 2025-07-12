@@ -317,11 +317,10 @@ import Flutter
                 } catch {
                     NSLog("Error writing to log file: \(error.localizedDescription)")
                 }
-                }
             }
         }
     }
-    
+
     private static func rotateLogFiles() {
         do {
             let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
