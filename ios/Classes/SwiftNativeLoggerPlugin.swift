@@ -57,16 +57,50 @@ public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHand
             }
             
         case "readLogs":
-            result(NativeLogger.readLogs())
-            
+            // Respond immediately to avoid blocking Flutter
+            result(true)
+            // Process file reading in background
+            DispatchQueue.global(qos: .background).async {
+                let logs = NativeLogger.readLogs()
+                // Send logs via event sink to avoid blocking method channel
+                DispatchQueue.main.async {
+                    if let sink = NativeLogger.getEventSink() {
+                        sink(["action": "readLogs", "data": logs])
+                    }
+                }
+            }
+
         case "clearLogs":
-            result(NativeLogger.clearLogs())
-            
+            // Respond immediately to avoid blocking Flutter
+            result(true)
+            // Process file clearing in background
+            DispatchQueue.global(qos: .background).async {
+                let success = NativeLogger.clearLogs()
+                // Send result via event sink
+                DispatchQueue.main.async {
+                    if let sink = NativeLogger.getEventSink() {
+                        sink(["action": "clearLogs", "success": success])
+                    }
+                }
+            }
+
         case "getLogFilePath":
+            // This is fast, can remain synchronous
             result(NativeLogger.getLogFilePath())
-            
+
         case "shareLogFile":
-            result(NativeLogger.shareLogFile())
+            // Respond immediately to avoid blocking Flutter
+            result(true)
+            // Process file sharing in background
+            DispatchQueue.global(qos: .background).async {
+                let success = NativeLogger.shareLogFile()
+                // Send result via event sink
+                DispatchQueue.main.async {
+                    if let sink = NativeLogger.getEventSink() {
+                        sink(["action": "shareLogFile", "success": success])
+                    }
+                }
+            }
 
             case "getDeviceInfo":
                 result(NativeLogger.getDeviceInfo())
@@ -80,13 +114,38 @@ public class SwiftNativeLoggerPlugin: NSObject, FlutterPlugin, FlutterStreamHand
                     result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing keyword", details: nil))
                     return
                 }
-                result(NativeLogger.filterLogs(keyword: keyword))
+
+                // Respond immediately to avoid blocking Flutter
+                result(true)
+                // Process filtering in background
+                DispatchQueue.global(qos: .background).async {
+                    let filteredLogs = NativeLogger.filterLogs(keyword: keyword)
+                    // Send result via event sink
+                    DispatchQueue.main.async {
+                        if let sink = NativeLogger.getEventSink() {
+                            sink(["action": "filterLogs", "data": filteredLogs, "keyword": keyword])
+                        }
+                    }
+                }
 
             case "archiveLogs":
-                if let archiveUrl = NativeLogger.archiveLogs() {
-                    result(archiveUrl.path)
-                } else {
-                    result(nil)
+                // Respond immediately to avoid blocking Flutter
+                result(true)
+                // Process archiving in background
+                DispatchQueue.global(qos: .background).async {
+                    if let archiveUrl = NativeLogger.archiveLogs() {
+                        DispatchQueue.main.async {
+                            if let sink = NativeLogger.getEventSink() {
+                                sink(["action": "archiveLogs", "data": archiveUrl.path])
+                            }
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            if let sink = NativeLogger.getEventSink() {
+                                sink(["action": "archiveLogs", "data": NSNull()])
+                            }
+                        }
+                    }
                 }
 
             case "testShareFunctionality":

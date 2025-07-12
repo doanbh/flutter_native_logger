@@ -13,7 +13,14 @@ import Flutter
     private static var lastFlushTime = Date()
     
     private static var eventSink: FlutterEventSink?
-    
+
+    // MARK: - Performance Optimization: Cached DateFormatter
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter
+    }()
+
     // Singleton instance
     @objc public static let shared = NativeLogger()
     
@@ -24,8 +31,7 @@ import Flutter
         DispatchQueue.global(qos: .background).async {
             autoreleasepool {
                 do {
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+                    // Use cached DateFormatter for better performance
                     let timestamp = dateFormatter.string(from: Date())
 
                     let prefix = isBackground ? "[$tag-BG]" : "[$tag]"
@@ -198,6 +204,12 @@ import Flutter
     
     public static func setEventSink(_ sink: @escaping FlutterEventSink) {
         eventSink = sink
+    }
+
+    // MARK: - Internal Helper for Plugin
+
+    @objc public static func getEventSink() -> FlutterEventSink? {
+        return eventSink
     }
 
     // MARK: - Modern View Controller Helper
@@ -443,8 +455,11 @@ import Flutter
             object: nil,
             queue: .main
         ) { _ in
-            log(message: "App entered background", tag: "Lifecycle")
-            flushBuffer(force: true) // Force flush when app goes to background
+            // Process in background to avoid blocking main thread
+            DispatchQueue.global(qos: .background).async {
+                log(message: "App entered background", tag: "Lifecycle")
+                flushBuffer(force: true) // Force flush when app goes to background
+            }
         }
 
         notificationCenter.addObserver(
@@ -468,8 +483,11 @@ import Flutter
             object: nil,
             queue: .main
         ) { _ in
-            log(message: "App will resign active", tag: "Lifecycle")
-            flushBuffer(force: true) // Force flush when app resigns active
+            // Process in background to avoid blocking main thread
+            DispatchQueue.global(qos: .background).async {
+                log(message: "App will resign active", tag: "Lifecycle")
+                flushBuffer(force: true) // Force flush when app resigns active
+            }
         }
 
         notificationCenter.addObserver(
@@ -477,8 +495,11 @@ import Flutter
             object: nil,
             queue: .main
         ) { _ in
-            log(message: "App will terminate", tag: "Lifecycle")
-            flushBuffer(force: true) // Force flush when app terminates
+            // Process in background to avoid blocking main thread
+            DispatchQueue.global(qos: .background).async {
+                log(message: "App will terminate", tag: "Lifecycle")
+                flushBuffer(force: true) // Force flush when app terminates
+            }
         }
 
         // Register for device orientation changes
