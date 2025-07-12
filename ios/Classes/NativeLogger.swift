@@ -8,18 +8,38 @@ import Flutter
     private static let MAX_LOG_SIZE = 5 * 1024 * 1024 // 5MB
     private static let MAX_BUFFER_SIZE = 4 * 1024 // 4KB
     
-    private static var memoryBuffer = NSMutableString()
-    private static let bufferLock = NSLock()
+    // MARK: - Thread-Safe Buffer Management
+    /// Thread-safe buffer using concurrent queue with barriers
+    /// Replaces NSMutableString to eliminate thread safety issues
+    private static var bufferData = Data()
     private static var lastFlushTime = Date()
+    private static let bufferQueue = DispatchQueue(
+        label: "com.sharitek.native_logger.buffer",
+        qos: .background,
+        attributes: .concurrent
+    )
     
     private static var eventSink: FlutterEventSink?
 
-    // MARK: - Performance Optimization: Cached DateFormatter
-    private static let dateFormatter: DateFormatter = {
+    // MARK: - Performance Optimization: Thread-Safe DateFormatter
+    private static let dateFormatterKey = "NativeLogger.DateFormatter"
+
+    /// Thread-safe DateFormatter using thread-local storage
+    /// Prevents crashes and incorrect timestamps from concurrent access
+    private static var threadLocalDateFormatter: DateFormatter {
+        // Check if current thread already has a DateFormatter
+        if let formatter = Thread.current.threadDictionary[dateFormatterKey] as? DateFormatter {
+            return formatter
+        }
+
+        // Create new DateFormatter for this thread
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+
+        // Store in thread-local storage
+        Thread.current.threadDictionary[dateFormatterKey] = formatter
         return formatter
-    }()
+    }
 
     // Singleton instance
     @objc public static let shared = NativeLogger()
@@ -31,26 +51,32 @@ import Flutter
         DispatchQueue.global(qos: .background).async {
             autoreleasepool {
                 do {
-                    // Use cached DateFormatter for better performance
-                    let timestamp = dateFormatter.string(from: Date())
+                    // Use thread-safe DateFormatter for better performance and safety
+                    let timestamp = threadLocalDateFormatter.string(from: Date())
 
                     let prefix = isBackground ? "[$tag-BG]" : "[$tag]"
                     let formattedMessage = "[\(timestamp)]\(prefix)[\(level)] \(message)\n"
 
-                    // Add to memory buffer (thread-safe)
-                    bufferLock.lock()
-                    memoryBuffer.append(formattedMessage)
-
-                    // Check buffer size or time for flushing
-                    let currentTime = Date()
-                    let timeSinceLastFlush = currentTime.timeIntervalSince(lastFlushTime)
-                    let bufferSize = memoryBuffer.length
-
-                    // Flush if buffer is big enough or enough time has passed
-                    if bufferSize >= MAX_BUFFER_SIZE || timeSinceLastFlush >= 5.0 {
-                        flushBuffer()
+                    // Convert to Data for efficient buffer management
+                    guard let messageData = formattedMessage.data(using: .utf8) else {
+                        NSLog("Failed to convert log message to UTF-8 data")
+                        return
                     }
-                    bufferLock.unlock()
+
+                    // Add to thread-safe buffer using barrier for write operations
+                    bufferQueue.async(flags: .barrier) {
+                        bufferData.append(messageData)
+
+                        // Check buffer size or time for flushing
+                        let currentTime = Date()
+                        let timeSinceLastFlush = currentTime.timeIntervalSince(lastFlushTime)
+                        let bufferSize = bufferData.count
+
+                        // Flush if buffer is big enough or enough time has passed
+                        if bufferSize >= MAX_BUFFER_SIZE || timeSinceLastFlush >= 5.0 {
+                            flushBufferInternal()
+                        }
+                    }
 
                     // Send to event sink if available (on main thread)
                     DispatchQueue.main.async {
@@ -90,9 +116,10 @@ import Flutter
     }
     
     @objc public static func clearLogs() -> Bool {
-        bufferLock.lock()
-        memoryBuffer.setString("")
-        bufferLock.unlock()
+        // Clear buffer using thread-safe barrier operation
+        bufferQueue.sync(flags: .barrier) {
+            bufferData.removeAll(keepingCapacity: true)
+        }
         
         let logFilePath = getLogFilePath()
         
@@ -280,23 +307,28 @@ import Flutter
         return status
     }
     
+    /// Public interface for flushing buffer - maintains API compatibility
     private static func flushBuffer(force: Bool = false) {
-        // Extract buffer content safely
-        var contentToWrite: NSString?
+        bufferQueue.async(flags: .barrier) {
+            flushBufferInternal(force: force)
+        }
+    }
 
-        bufferLock.lock()
-        if memoryBuffer.length == 0 && !force {
-            bufferLock.unlock()
+    /// Internal thread-safe buffer flushing implementation
+    /// Must be called from within bufferQueue barrier
+    private static func flushBufferInternal(force: Bool = false) {
+        // Check if we have content to write
+        if bufferData.isEmpty && !force {
             return
         }
 
-        contentToWrite = memoryBuffer.copy() as? NSString
-        memoryBuffer.setString("")
+        // Extract buffer content safely
+        let contentToWrite = bufferData
+        bufferData.removeAll(keepingCapacity: true) // Reuse allocated capacity
         lastFlushTime = Date()
-        bufferLock.unlock()
 
         // Ensure we have content to write
-        guard let content = contentToWrite, content.length > 0 else {
+        guard !contentToWrite.isEmpty else {
             return
         }
 
@@ -313,20 +345,17 @@ import Flutter
                         rotateLogFiles()
                     }
 
-                    // Use modern file writing approach
-                    if let data = content.data(using: String.Encoding.utf8.rawValue) {
-                        if FileManager.default.fileExists(atPath: logFilePath) {
-                            // Append to existing file
-                            if let fileHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logFilePath)) {
-                                defer { try? fileHandle.close() }
-                                fileHandle.seekToEndOfFile()
-                                fileHandle.write(data)
-                            }
+                    // Use modern file writing approach with Data directly
+                    if FileManager.default.fileExists(atPath: logFilePath) {
+                        // Append to existing file using modern APIs
+                        if let fileHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logFilePath)) {
+                            defer { try? fileHandle.close() }
+                            fileHandle.seekToEndOfFile()
+                            fileHandle.write(contentToWrite)
                         } else {
-                            // Create new file
-                            try data.write(to: URL(fileURLWithPath: logFilePath))
+                            // Create new file with Data directly
+                            try contentToWrite.write(to: URL(fileURLWithPath: logFilePath))
                         }
-                    }
                 } catch {
                     NSLog("Error writing to log file: \(error.localizedDescription)")
                 }
@@ -342,10 +371,10 @@ import Flutter
             
             let currentLogPath = getLogFilePath()
             
-            // Generate new filename with timestamp
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
-            let timestamp = dateFormatter.string(from: Date())
+            // Generate new filename with timestamp using thread-safe formatter
+            let archiveDateFormatter = DateFormatter()
+            archiveDateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+            let timestamp = archiveDateFormatter.string(from: Date())
             let archivedPath = directory.appendingPathComponent("app_native_log_\(timestamp).txt").path
             
             // Rename current log file
@@ -420,9 +449,9 @@ import Flutter
     // Thêm trong lớp NativeLogger
 
     @objc public static func archiveLogs() -> URL? {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
-        let timestamp = dateFormatter.string(from: Date())
+        let archiveDateFormatter = DateFormatter()
+        archiveDateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = archiveDateFormatter.string(from: Date())
 
         do {
             let logFilePath = getLogFilePath()
