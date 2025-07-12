@@ -309,13 +309,14 @@ import Flutter
                             defer { try? fileHandle.close() }
                             fileHandle.seekToEndOfFile()
                             fileHandle.write(contentToWrite)
-                        } else {
-                            // Create new file with Data directly
-                            try contentToWrite.write(to: URL(fileURLWithPath: logFilePath))
                         }
-                    } catch {
-                        NSLog("Error writing to log file: \(error.localizedDescription)")
+                    } else {
+                        // Create new file with Data directly
+                        try contentToWrite.write(to: URL(fileURLWithPath: logFilePath))
                     }
+                } catch {
+                    NSLog("Error writing to log file: \(error.localizedDescription)")
+                }
                 }
             }
         }
